@@ -37,6 +37,7 @@ mongoose.connect("mongodb+srv://ralao:1234@cluster0.j4wsk2i.mongodb.net/?retryWr
         return cb(null, `${file.fieldname}_${Date.now()}${path.extname(file.originalname)}`)
       }
     })
+
     const upload = multer({storage: storage})
 
     //creating upload endpoint for images
@@ -133,6 +134,83 @@ mongoose.connect("mongodb+srv://ralao:1234@cluster0.j4wsk2i.mongodb.net/?retryWr
     let products = await Product.find({}); // get all the products from the database
     console.log("All Products Fetched");
     res.json(products); // send the products to the client
+  })
+
+  // Schema for Creating User Model
+  const Users = mongoose.model('Users',{ // we create a model for the user
+    name: { // we define the name of the user
+      type: String,
+      required: true,
+    },
+    email: { // we define the email of the user
+      type: String,
+      unique: true,
+      required: true,
+    },
+    password: {
+      type: String,
+      required: true,
+    },
+    cartData: {
+      type: Object,
+    },
+    date: {
+      type: Date,
+      default: Date.now,
+    }
+  })
+
+  // Create User Endpoint for registration
+  app.post('/signup', async (req, res)=>{ // we create an endpoint for the user registration
+    let check = await Users.findOne({email: req.body.email}); // we check if the email already exists in the database
+    if (check) { // if the email already exists
+      return res.status(400).json({success:false, errors: "Email Already Exists"}); // we send an error message to the client
+    }
+    let cart = {}; // we define the cart object
+    for (let i = 0; i < 300; i++) { // we create a loop to create 300 items in the cart
+      cart[i] = 0; // we set the value of each item to 0
+    }
+    const user = new Users({ // we create a new user
+      name: req.body.username,
+      email: req.body.email,
+      password: req.body.password,
+      cartData: cart,
+    })
+
+    await user.save(); // we save the user in the database
+
+    const data = { // to use jwt authentication, we need to create a token. a token is a string that is used to authenticate the user
+      user: {
+        id: user.id,
+      }
+    }
+
+    const token = jwt.sign(data, 'secret_ecom') // we create a token using the jwt package, we pass the data and a secret key to the sign method
+    res.json({success:true,token}) // we send the token to the client
+  })
+
+
+  // Create User Endpoint for login
+  app.post('/login',async(req, res)=>{ // we create an endpoint for the user login
+    let user = await Users.findOne({email: req.body.email}); // we check if the user exists in the database
+    if (user) {
+      const passCompare = req.body.password === user.password; // we compare the password from the client with the password in the database
+      if (passCompare) { // if the password is correct
+        const data = { // we create a token using the jwt package
+          user: {
+            id: user.id
+          }
+        }
+        const token = jwt.sign(data, 'secret_ecom'); // we create a token using the jwt package
+        res.json({success:true,token}); // we send the token to the client
+      }
+      else {
+        res.json({success:false, errors: "Invalid Password"}); // if the password is incorrect, we send an error message to the client
+      }
+    }
+    else {
+      res.json({success:false, errors: "Invalid Email"}); // if the email is incorrect, we send an error message to the client
+    }
   })
 
   // 1
