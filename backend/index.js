@@ -4,33 +4,30 @@ const port = 4000 // define our code
 const express = require("express") // initialize express package
 const app = express()// using express, we can create our app instance
 
-const mongoose = require("mongoose")// initialize mongoose package
-const jwt = require("jsonwebtoken")// initialize json webtoken package
-const multer = require("multer") // initialize multer package
+const mongoose = require("mongoose")// initialize mongoose package so we can use the MongoDB database
+const jwt = require("jsonwebtoken")// initialize json webtoken package, so we can generate tokens and verify them
+const multer = require("multer") // initialize multer package, so we can create the image storage system
 const path = require("path") // include the path that is the express server
 // using this path we can get access to our backend directory in our express app
-const cors = require("cors") // initialize cors package
-const { connect } = require("http2")
+const cors = require("cors") // initialize cors package, to provide the access to React Project, which is running on a different port
 
-app.use(express.json()); // it will convert the request into json format. this is necessary because we need to send the data in json format because we are using the REST API
-app.use(cors()) // using this, our react.js project will  connect to express app on 4000 port
+app.use(express.json()); // it will convert the request into json format. Using this, any request we get from the client will be converted into json format
+app.use(cors()); // using this, we get access to React frontend project, and connect with the backend
 
-// we initialize our database -> a mongoose db atlas database
-// search for mongoose db atlas online and create a new database
-
-
+// we initialize our database -> a mongoose db atlas database // search for mongoose db atlas online and create a new database
 // Database Connection (MongoDB) to our Express server
 mongoose.connect("mongodb+srv://ralao:1234@cluster0.j4wsk2i.mongodb.net/?retryWrites=true&w=majority&appName=E-Commerce-Shop") //we add the password and the path where we have the data to our application
 
 
 // API creation
-  //create an api
+  //create an api to check if the express app is running
   app.get("/", (req, res)=>{
-    res.send("Express App is Running") // if we go to the root of our express app, we will get this message
+    res.send("Express App is Running")
   })
 
   //create express login for the login endpoint
-    // Image Storage Engine
+
+  // Image Storage Engine
     const storage = multer.diskStorage({
       destination: './upload/images',
       filename: (req, file, cb)=>{
@@ -40,7 +37,7 @@ mongoose.connect("mongodb+srv://ralao:1234@cluster0.j4wsk2i.mongodb.net/?retryWr
 
     const upload = multer({storage: storage})
 
-    //creating upload endpoint for images
+    //creating upload endpoint for images (this is the API)
     app.use('/images', express.static('upload/images'))
     app.post("/upload", upload.single('product'), (req, res)=>{
       res.json({
@@ -130,7 +127,7 @@ mongoose.connect("mongodb+srv://ralao:1234@cluster0.j4wsk2i.mongodb.net/?retryWr
   })
 
   // creating API for getting all products
-  app.get("/allproducts", async(req, res)=>{
+  app.get('/allproducts', async(req, res)=>{
     let products = await Product.find({}); // get all the products from the database
     console.log("All Products Fetched");
     res.json(products); // send the products to the client
@@ -213,8 +210,67 @@ mongoose.connect("mongodb+srv://ralao:1234@cluster0.j4wsk2i.mongodb.net/?retryWr
     }
   })
 
+
+  // Create Endpoint for newcollection data
+  app.get('/newcollections', async (req, res)=>{
+    let products = await Product.find({}); // we get all the products from the database,
+    let newcollection = products.slice(1).slice(-8); // we get the last 8 products from the database
+    console.log('NewCollection Fetched');
+    res.send(newcollection); // we send the newcollection to the client
+  })
+
+  // creating endpoint for popularinwomen section
+  app.get('/popularinwomen', async (req, res)=>{
+    let products = await Product.find({category:"women"}); // we get all the products from the database, with the category
+    let popular_in_women = products.slice(0,4); // we get the first 4 products from the database
+    console.log('Popular In Women Fetched');
+    res.send(popular_in_women);
+  })
+
+  //creating MIDDLEWARE to fetch user data
+  const fetchUser = async (req,res,next)=>{
+    const token = req.header('auth-token'); // we get the token from the header
+    if (!token) {
+      res.status(401).send({errors: "Please Authenticate using a valid token"}); // if there is no token, we send an error message to the client
+    } else {
+      try {
+        const data = jwt.verify(token, 'secret_ecom'); // we verify the token using the jwt package. we use this because: when the user logs in, we create a token and send it to the client. when the client makes a request, it sends the token to the server. we need to verify the token to authenticate the user
+        req.user = data.user; // if the token is valid, we get the user data
+        next(); // we call the next function to continue with the request
+      } catch (error) {
+        res.status(401).send({errors: "Please Authenticate using a valid token"}); // if the token is invalid, we send an error message to the client
+      }
+    }
+  }
+
+  // creating endpoint for adding products in cartdata
+  app.post('/addtocart', fetchUser, async (req, res)=>{ //fetchUser is a middleware that we created to fetch the user data)
+    console.log("added", req.body.itemId);
+    let userData =  await Users.findOne({_id: req.user.id}); // we get the user data from the database
+    userData.cartData[req.body.itemId] += 1; // we increment the quantity of the item in the cart
+    await Users.findOneAndUpdate({_id: req.user.id}, {cartData: userData.cartData}); // we update the cart data in the database
+    res.send("Added")
+  })
+
+  //creating endpoint to remove products from cartdata
+  app.post('/removefromcart', fetchUser, async (req, res)=>{
+    console.log("removed", req.body.itemId);
+    let userData = await Users.findOne({_id: req.user.id}); // we get the user data from the database
+    if(userData.cartData[req.body.itemId]>0) // if the quantity of the item in the cart is greater than 0
+    userData.cartData[req.body.itemId] -= 1; // we decrement the quantity of the item in the cart
+    await Users.findOneAndUpdate({_id: req.user.id}, {cartData: userData.cartData}); // we update the cart data in the database
+    res.send("Removed")
+  })
+
+  //creating endpoint to get cartdata
+  app.post('/getcart', fetchUser, async (req, res)=>{
+    console.log("GetCart");
+    let userData = await Users.findOne({_id: req.user.id}); // we get the user data from the database
+    res.json(userData.cartData); // we send the cart data to the client
+  })
+
   // 1
-  app.listen(port, (error)=>{
+  app.listen(port, (error)=>{ // we start the server on the port 4000
     if (!error) {
       console.log("Server Running on Port " + port) // if there is no error, we will get this message on the console
     } else {
